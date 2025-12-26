@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Board from "./components/Board";
 import { Chess } from "chess.js";
+import type { Square } from "chess.js";
 import type { ChessJSPiece } from "./types/chess";
 
 /* ---------------- TYPES ---------------- */
@@ -15,6 +16,7 @@ export default function App() {
   const [game, setGame] = useState(() => new Chess());
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [winner, setWinner] = useState<string | null>(null);
+  const [legalMoves, setLegalMoves] = useState<Set<string>>(new Set());
 
   const board = game.board();
   const turn = game.turn() === "w" ? "White" : "Black";
@@ -23,44 +25,86 @@ export default function App() {
     if (winner) return;
 
     if (!selected) {
-      if (board[row][col]) {
-        setSelected([row, col]);
-      }
+      const piece = board[row][col];
+      if (!piece) return; // do nothing when you click an empty square
+
+      if (piece.color !== game.turn()) return; // do nothing when wrong colored piece is clicked
+
+      const from = toSquare([row, col]) as Square;
+
+      // generate legal moves from current square
+      const moves = game.moves({square: from, verbose: true});
+
+      const targets = new Set(moves.map(m => m.to));
+
+      // set selected and legal targets
+      setSelected([row, col]);
+      setLegalMoves(targets);
+
+
+
     } else {
+      // same square
       const from = toSquare(selected);
       const to = toSquare([row, col]);
 
-      const newGame = new Chess(game.fen());
-
-      try {
-      const move = newGame.move({ from, to });
-      
-      
-      if (move) {
-        setGame(newGame);
+      if (from === to) {
         setSelected(null);
-
-        if (newGame.isGameOver()) {
-            setWinner(
-                newGame.isCheckmate()
-                ? `${newGame.turn() === 'w' ? "Black" : "White"} wins`
-                : "Draw"
-            );
-        }
+        setLegalMoves(new Set());
+        return;
       }
-    } catch (e) {
-      // illegal move
-      console.error(e);
+      
+      
+      // another own piece
+      const newSelectedPiece = board[row][col];
+      
+      if (newSelectedPiece && newSelectedPiece.color === game.turn()) {
+        const newFrom = toSquare([row, col]) as Square;
+        const moves = game.moves({square: newFrom, verbose: true});
+        const targets = new Set(moves.map(m => m.to));
+
+        setSelected([row, col]);
+        setLegalMoves(targets);
+        return;
+      }
+      
+      // invalid move
+      if (!legalMoves.has(to)) {
+        setSelected(null);
+        setLegalMoves(new Set());
+        return;
+      }
+
+      // make move
+      const newGame = new Chess(game.fen());
+      newGame.move({from, to});
+
+      setGame(newGame);
       setSelected(null);
+      setLegalMoves(new Set());
+
+      if (newGame.isGameOver()) {
+        setWinner( newGame.isCheckmate()
+          ? `${newGame.turn() === 'b' ? "White" : "Black"} wins!`
+          : "Draw.");
+        }
     } 
-    }
+    
   }
 
-  function toSquare([row, col]: [number, number]) {
+  function toSquare([row, col]: [number, number]): string {
     const files = "abcdefgh";
     return files[col] + (8 - row);
   }
 
+  // e4 -> [4, 3]
+  function toRowCol(square: string): [number, number] {
+    const files = "abcdefgh";
+    const col = files.indexOf(square[0]);
+    const row = 8 - Number(square[1]);
+
+    return [row, col];
+  }
 
 
   return (
@@ -71,6 +115,7 @@ export default function App() {
         board={board}
         selected={selected}
         onSquareClick={handleSquareClick}
+        legalMoves={legalMoves}
        />
 
       <p>Turn: {turn}</p>
